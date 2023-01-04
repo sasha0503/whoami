@@ -20,6 +20,7 @@ class Player(Base):
     secret_name = Column("secret_name", String)
     username = Column("username", String)
     list_id = Column("list_id", Integer)
+    cat_id = Column("cat_id", Integer)
     fellow_id = Column("fellow_id", Integer)
     game_id = Column(ForeignKey("games.id"))
     game = relationship("Game", back_populates="players")

@@ -1,5 +1,8 @@
+import random
+
+import requests
 from aiogram import Bot, Dispatcher, executor, types
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InputMediaPhoto
 from typing import List
 
 import logging
@@ -19,29 +22,45 @@ stop_button = KeyboardButton("зупинити")
 back_button = KeyboardButton("назад")
 start_button = KeyboardButton("почати гру 🚀")
 name_button = KeyboardButton("побачити хто я 👀")
+cat_button = KeyboardButton("подивитися котів")
 
 inactive_keyboard = ReplyKeyboardMarkup(resize_keyboard=True).row(join_button, create_button)
 pregame_keyboard = ReplyKeyboardMarkup(resize_keyboard=True).row(start_button, stop_button)
 ingame_keyboard = ReplyKeyboardMarkup(resize_keyboard=True).row(name_button, stop_button)
 joining_keyboard = ReplyKeyboardMarkup(resize_keyboard=True).row(back_button)
+waiting_keyboard = ReplyKeyboardMarkup(resize_keyboard=True).row(cat_button)
+
+keyboards = {
+    Player.INGAME: ingame_keyboard,
+    Player.PREGAME: pregame_keyboard,
+    Player.GETTINGNAME: ReplyKeyboardMarkup(),
+    Player.WAITING: ReplyKeyboardMarkup(),
+    Player.INACTIVE: inactive_keyboard,
+    Player.JOINING: joining_keyboard
+}
 
 
 @dp.message_handler(commands=["start"])
 async def send_welcome(message: types.Message):
     user_id = message.from_user.id
-    username = message.from_user.full_name
+    username = random.choice(emoji) + message.from_user.full_name
     q = session.query(Player).filter(Player.id == user_id)
     if not session.query(q.exists()).scalar():
-        new_player = Player(user_id, username)
-        session.add(new_player)
+        user = Player(user_id, username)
+        session.add(user)
         session.commit()
-    await message.answer("добрий день!", reply_markup=inactive_keyboard)
+    else:
+        user: Player = q.first()
+    await message.answer("добрий день!", reply_markup=keyboards[user.status])
+
+
+emoji = ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐸', '🐷', '🐮', '🦁', '🐯', '🐨', '🐻', '🐥', '🦄', '🐝', '🐳']
 
 
 async def check_user(user: Player, message: types.Message):
     if user is None:
         user_id = message.from_id
-        username = message.from_user.full_name
+        username = random.choice(emoji) + message.from_user.full_name
         new_player = Player(user_id, username)
         session.add(new_player)
         session.commit()
@@ -57,11 +76,32 @@ async def join(message: types.Message):
     if await check_user(user, message):
         return
     if user.status == Player.INACTIVE:
-        await bot.send_message(user.id, f"надішли код гри", reply_markup=ReplyKeyboardRemove())
+        await bot.send_message(user.id, f"🔐 надішли код гри", reply_markup=ReplyKeyboardRemove())
         user.status = Player.JOINING
         session.commit()
     else:
         await message.answer("немає такого варіянту", reply_markup=message.reply_markup)
+
+
+@dp.message_handler(lambda message: message.text == "подивитися котів")
+async def join(message: types.Message):
+    user_id = message.from_id
+    user: Player = session.query(Player).filter(Player.id == user_id).first()
+    if await check_user(user, message):
+        return
+    if user.status == Player.WAITING:
+        cat = "test"
+        while cat[-3:] != "jpg":
+            r = requests.get("https://api.thecatapi.com/v1/images/search")
+            cat = r.json()[0]["url"]
+        if user.cat_id is None:
+            msg = await bot.send_photo(user.id, photo=cat)
+            user.cat_id = msg.message_id
+            session.commit()
+        else:
+            await bot.edit_message_media(InputMediaPhoto(type="photo", media=cat), user.id, user.cat_id)
+    else:
+        await message.answer("спочатку треба виграти", reply_markup=message.reply_markup)
 
 
 @dp.message_handler(lambda message: message.text == "назад")
@@ -89,9 +129,9 @@ async def create(message: types.Message):
         current_game = Game(user_id)
         session.add(current_game)
         user.game = current_game
-        await bot.send_message(user.id, f"код гри: `{current_game.id}`", parse_mode="Markdown")
+        await bot.send_message(user.id, f"🔑 код гри: `{current_game.id}`", parse_mode="Markdown")
         answer = current_game.create_list(user.status, user_id)
-        list_message = await bot.send_message(user.id, f"список гравців:\n{answer}")
+        list_message = await bot.send_message(user.id, f"Список гравців:\n{answer}")
         user.list_id = list_message.message_id
         await message.answer("почніть гру, коли всі приєднаються", reply_markup=pregame_keyboard)
         session.commit()
@@ -113,6 +153,7 @@ async def cancel_game(message: types.Message):
             await bot.edit_message_text(f"список гравців:\n{answer}", chat_id=player.id, message_id=player.list_id)
             player.status = Player.INACTIVE
             player.secret_name = ""
+            user.cat_id = None
             player.game = None
             await bot.send_message(player.id, "гра зупинена", reply_markup=inactive_keyboard)
         session.delete(current_game)
@@ -138,7 +179,7 @@ async def start_game(message: types.Message):
                 await bot.send_message(player.id, "запускаємо гру!")
                 fellow = players[j - 1]
                 player.fellow_id = fellow.id
-                await bot.send_message(player.id, f"загадай персонажа або особу для _{fellow.username}_ ",
+                await bot.send_message(player.id, f"📝 загадай персонажа або людину для _{fellow.username[1:]}_ ",
                                        parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
             current_game.is_on = True
             session.commit()
@@ -165,8 +206,11 @@ async def get_name(message: types.Message):
             for player in players:
                 await bot.send_message(player.id, "_the end!_", parse_mode='Markdown', reply_markup=inactive_keyboard)
                 player.status = Player.INACTIVE
+                player.cat_id = None
                 player.secret_name = ""
                 session.delete(current_game)
+        else:
+            await message.answer("вітаю! чекаємо інших", reply_markup=waiting_keyboard)
         session.commit()
     else:
         await message.answer("немає такого варіянту", reply_markup=message.reply_markup)
