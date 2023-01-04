@@ -19,8 +19,8 @@ class Player(Base):
     username = Column("username", String)
     replay_id = Column("replay_id", Integer)
     list_id = Column("list_id", Integer)
-    game_id = Column(Integer, ForeignKey("games.id"))
-    game = relationship(back_populates="players")
+    game_id = Column(ForeignKey("games.id"))
+    game = relationship("Game", back_populates="players")
 
     def __init__(self, telegram_id, username, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -35,7 +35,7 @@ class Game(Base):
 
     id = Column("id", Integer, primary_key=True)
     is_on = Column("is_on", Boolean)
-    players = relationship(back_populates="game")
+    players = relationship("Player", back_populates="game")
 
     def __init__(self, game_id, *args, **kwargs):
         super().__init__(*args, **kwargs)
