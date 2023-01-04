@@ -57,7 +57,7 @@ async def join(message: types.Message):
     if await check_user(user, message):
         return
     if user.status == Player.INACTIVE:
-        code_message = await bot.send_message(user.id, f"надішли код гри у відповідь на це повідомлення",
+        code_message = await bot.send_message(user.id, f"надішли код гри",
                                               reply_markup=ReplyKeyboardRemove())
         user.code_id = code_message.message_id
         user.status = Player.JOINING
@@ -143,9 +143,8 @@ async def start_game(message: types.Message):
                 await bot.send_message(player.id, "запускаємо гру!")
                 fellow = players[j - 1]
                 replay_message = await bot.send_message(player.id,
-                                                        f"загадай персонажа або особу для _{fellow.username}_ "
-                                                        f"у відповідь на це повідомлення", parse_mode="Markdown",
-                                                        reply_markup=ReplyKeyboardRemove())
+                                                        f"загадай персонажа або особу для _{fellow.username}_ ",
+                                                        parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
                 fellow.replay_id = replay_message.message_id
                 user.fellow_id = fellow.id
             session.commit()
@@ -189,65 +188,44 @@ async def assign_name(message: types.Message):
     if await check_user(user, message):
         return
     if user.status == Player.JOINING:
-        if message.reply_to_message is None:
-            code_message = await bot.send_message(user.id, f"надішли код гри у відповідь на це повідомлення",
-                                                  reply_markup=ReplyKeyboardRemove())
-            user.code_id = code_message.message_id
-            session.commit()
-        else:
-            replay_id = message.reply_to_message.message_id
-            q = session.query(Player).filter(Player.code_id == replay_id)
-            if session.query(q.exists()).scalar():
-                q = session.query(Game).filter(Game.id == message.text)
-                if session.query(q.exists()).scalar():
-                    current_game = q.first()
-                    if current_game.is_on:
-                        user.status = Player.INACTIVE
-                        user.code_id = None
-                        session.commit()
-                        await message.answer("гра вже почалася", reply_markup=inactive_keyboard)
-                        return
-                    user.game = current_game
-                    user.status = Player.PREGAME
-                    answer = current_game.create_list(user.status, user_id)
-                    for player in current_game.players:
-                        if player.id == user_id or not player.list_id:
-                            list_message = await bot.send_message(player.id, f"список гравців:\n{answer}")
-                            await bot.send_message(player.id, "почніть гру, коли всі приєднаються", reply_markup=pregame_keyboard)
-                            player.list_id = list_message.message_id
-                        else:
-                            await bot.edit_message_text(f"список гравців:\n{answer}", player.id, player.list_id)
-
-                else:
-                    await message.answer("немає такої гри", reply_markup=joining_keyboard)
-    elif user.status == Player.GETTINGNAME:
-        if message.reply_to_message is None:
-            fellow = session.query(Player).filter(Player.id == user.fellow_id).first()
-            replay_message = await bot.send_message(user.id,
-                                                    f"загадай персонажа або особу для _{fellow.username}_ "
-                                                    f"у відповідь на це повідомлення", parse_mode="Markdown",
-                                                    reply_markup=ReplyKeyboardRemove())
-            fellow.replay_id = replay_message.message_id
-            session.commit()
-        else:
-            replay_id = message.reply_to_message.message_id
-            q = session.query(Player).filter(Player.replay_id == replay_id)
-            current_game = user.game
-            if session.query(q.exists()).scalar() and current_game and current_game.is_on:
-                fellow: Player = q.first()
-                fellow.secret_name = message.text
-                user.status = Player.INGAME
+        q = session.query(Game).filter(Game.id == message.text)
+        if session.query(q.exists()).scalar():
+            current_game = q.first()
+            if current_game.is_on:
+                user.status = Player.INACTIVE
+                user.code_id = None
                 session.commit()
-                players: List[Player] = current_game.players
-                if all(player.secret_name != "" for player in players):
-                    for player in players:
-                        await bot.send_message(player.id, "починаємо!", reply_markup=ingame_keyboard)
-                        answer = current_game.create_list(player.status, player.id)
+                await message.answer("гра вже почалася", reply_markup=inactive_keyboard)
+            else:
+                user.game = current_game
+                user.status = Player.PREGAME
+                answer = current_game.create_list(user.status, user_id)
+                for player in current_game.players:
+                    if player.id == user_id or not player.list_id:
                         list_message = await bot.send_message(player.id, f"список гравців:\n{answer}")
+                        await bot.send_message(player.id, "почніть гру, коли всі приєднаються", reply_markup=pregame_keyboard)
                         player.list_id = list_message.message_id
-                    session.commit()
-                else:
-                    await message.answer("всьо супер, зачекай інших")
+                    else:
+                        await bot.edit_message_text(f"список гравців:\n{answer}", player.id, player.list_id)
+        else:
+            await message.answer("немає такої гри", reply_markup=joining_keyboard)
+    elif user.status == Player.GETTINGNAME:
+        current_game = user.game
+        if current_game and current_game.is_on:
+            fellow: Player = session.query(Player).filter(Player.id == user.fellow_id).first()
+            fellow.secret_name = message.text
+            user.status = Player.INGAME
+            session.commit()
+            players: List[Player] = current_game.players
+            if all(player.secret_name != "" for player in players):
+                for player in players:
+                    await bot.send_message(player.id, "починаємо!", reply_markup=ingame_keyboard)
+                    answer = current_game.create_list(player.status, player.id)
+                    list_message = await bot.send_message(player.id, f"список гравців:\n{answer}")
+                    player.list_id = list_message.message_id
+                session.commit()
+            else:
+                await message.answer("всьо супер, зачекай інших")
     else:
         await message.answer("немає такого варіянту", reply_markup=message.reply_markup)
 
