@@ -19,7 +19,7 @@ dp = Dispatcher(bot)
 join_button = KeyboardButton("приєднатися за кодом")
 create_button = KeyboardButton("створити нову")
 stop_button = KeyboardButton("зупинити")
-back_button = KeyboardButton("назад")
+back_button = KeyboardButton("⬅ ️назад")
 start_button = KeyboardButton("почати гру 🚀")
 name_button = KeyboardButton("побачити хто я 👀")
 cat_button = KeyboardButton("подивитися котів")
@@ -104,7 +104,7 @@ async def join(message: types.Message):
         await message.answer("спочатку треба виграти", reply_markup=message.reply_markup)
 
 
-@dp.message_handler(lambda message: message.text == "назад")
+@dp.message_handler(lambda message: message.text == "⬅ ️назад")
 async def join(message: types.Message):
     user_id = message.from_id
     user: Player = session.query(Player).filter(Player.id == user_id).first()
@@ -229,7 +229,7 @@ async def assign_name(message: types.Message):
             if current_game.is_on:
                 user.status = Player.INACTIVE
                 session.commit()
-                await message.answer("гра вже почалася", reply_markup=inactive_keyboard)
+                await message.answer("сорі, гра вже почалася", reply_markup=inactive_keyboard)
             else:
                 user.game = current_game
                 user.status = Player.PREGAME
@@ -243,7 +243,7 @@ async def assign_name(message: types.Message):
                     else:
                         await bot.edit_message_text(f"список гравців:\n{answer}", player.id, player.list_id)
         else:
-            await message.answer("немає такої гри", reply_markup=joining_keyboard)
+            await message.answer("немає такої гри 🤷‍♂️", reply_markup=joining_keyboard)
     elif user.status == Player.GETTINGNAME:
         current_game = user.game
         if current_game and current_game.is_on:
