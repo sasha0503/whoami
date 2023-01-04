@@ -57,9 +57,7 @@ async def join(message: types.Message):
     if await check_user(user, message):
         return
     if user.status == Player.INACTIVE:
-        code_message = await bot.send_message(user.id, f"надішли код гри",
-                                              reply_markup=ReplyKeyboardRemove())
-        user.code_id = code_message.message_id
+        await bot.send_message(user.id, f"надішли код гри", reply_markup=ReplyKeyboardRemove())
         user.status = Player.JOINING
         session.commit()
     else:
@@ -73,7 +71,6 @@ async def join(message: types.Message):
     if await check_user(user, message):
         return
     if user.status == user.JOINING:
-        user.code_id = None
         user.status = Player.INACTIVE
         session.commit()
         await message.answer("головне меню", reply_markup=inactive_keyboard)
@@ -116,8 +113,6 @@ async def cancel_game(message: types.Message):
             await bot.edit_message_text(f"список гравців:\n{answer}", chat_id=player.id, message_id=player.list_id)
             player.status = Player.INACTIVE
             player.secret_name = ""
-            player.fellow_id = None
-            player.replay_id = None
             player.game = None
             await bot.send_message(player.id, "гра зупинена", reply_markup=inactive_keyboard)
         session.delete(current_game)
@@ -142,13 +137,11 @@ async def start_game(message: types.Message):
                 player.list_id = 0
                 await bot.send_message(player.id, "запускаємо гру!")
                 fellow = players[j - 1]
-                replay_message = await bot.send_message(player.id,
-                                                        f"загадай персонажа або особу для _{fellow.username}_ ",
-                                                        parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
-                fellow.replay_id = replay_message.message_id
-                user.fellow_id = fellow.id
-            session.commit()
+                player.fellow_id = fellow.id
+                await bot.send_message(player.id, f"загадай персонажа або особу для _{fellow.username}_ ",
+                                       parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
             current_game.is_on = True
+            session.commit()
     else:
         await message.answer("немає такого варіянту", reply_markup=message.reply_markup)
 
@@ -173,8 +166,6 @@ async def get_name(message: types.Message):
                 await bot.send_message(player.id, "_the end!_", parse_mode='Markdown', reply_markup=inactive_keyboard)
                 player.status = Player.INACTIVE
                 player.secret_name = ""
-                player.fellow_id = None
-                player.replay_id = None
                 session.delete(current_game)
         session.commit()
     else:
@@ -193,7 +184,6 @@ async def assign_name(message: types.Message):
             current_game = q.first()
             if current_game.is_on:
                 user.status = Player.INACTIVE
-                user.code_id = None
                 session.commit()
                 await message.answer("гра вже почалася", reply_markup=inactive_keyboard)
             else:
@@ -203,7 +193,8 @@ async def assign_name(message: types.Message):
                 for player in current_game.players:
                     if player.id == user_id or not player.list_id:
                         list_message = await bot.send_message(player.id, f"список гравців:\n{answer}")
-                        await bot.send_message(player.id, "почніть гру, коли всі приєднаються", reply_markup=pregame_keyboard)
+                        await bot.send_message(player.id, "почніть гру, коли всі приєднаються",
+                                               reply_markup=pregame_keyboard)
                         player.list_id = list_message.message_id
                     else:
                         await bot.edit_message_text(f"список гравців:\n{answer}", player.id, player.list_id)
