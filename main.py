@@ -7,6 +7,8 @@ from typing import List
 
 import logging
 
+from aiogram.utils.exceptions import MessageToEditNotFound
+
 from whoami_player import session, Player, Game
 
 API_TOKEN = "5566294805:AAHBm87FAti2DnpcxBG6VsSuqbBSRzHrn1M"
@@ -66,6 +68,10 @@ async def check_user(user: Player, message: types.Message):
         session.commit()
         await message.answer("бот оновився, піф-паф", reply_markup=inactive_keyboard)
         return True
+    elif user.delete_msg_id is not None:
+        await bot.delete_message(user.id, user.delete_msg_id)
+        user.delete_msg_id = None
+        session.commit()
     return False
 
 
@@ -80,7 +86,7 @@ async def join(message: types.Message):
         user.status = Player.JOINING
         session.commit()
     else:
-        await message.answer("немає такого варіянту", reply_markup=message.reply_markup)
+        await message.answer("немає такого варіянту", reply_markup=keyboards[user.status])
 
 
 @dp.message_handler(lambda message: message.text == "подивитися котів")
@@ -94,7 +100,7 @@ async def join(message: types.Message):
         while cat[-3:] != "jpg":
             r = requests.get("https://api.thecatapi.com/v1/images/search")
             cat = r.json()[0]["url"]
-        if user.cat_id is None:
+        if not user.cat_id:
             msg = await bot.send_photo(user.id, photo=cat)
             user.cat_id = msg.message_id
             session.commit()
@@ -115,7 +121,7 @@ async def join(message: types.Message):
         session.commit()
         await message.answer("головне меню", reply_markup=inactive_keyboard)
     else:
-        await message.answer("немає такого варіянту", reply_markup=message.reply_markup)
+        await message.answer("немає такого варіянту", reply_markup=keyboards[user.status])
 
 
 @dp.message_handler(lambda message: message.text == "створити нову")
@@ -131,12 +137,13 @@ async def create(message: types.Message):
         user.game = current_game
         await bot.send_message(user.id, f"🔑 код гри: `{current_game.id}`", parse_mode="Markdown")
         answer = current_game.create_list(user.status, user_id)
-        list_message = await bot.send_message(user.id, f"Список гравців:\n{answer}")
+        list_message = await bot.send_message(user.id, answer)
         user.list_id = list_message.message_id
-        await message.answer("почніть гру, коли всі приєднаються", reply_markup=pregame_keyboard)
+        msg = await message.answer("почніть гру, коли всі приєднаються", reply_markup=pregame_keyboard)
+        user.delete_msg_id = msg.message_id
         session.commit()
     else:
-        await message.answer("немає такого варіянту", reply_markup=message.reply_markup)
+        await message.answer("немає такого варіянту", reply_markup=keyboards[user.status])
 
 
 @dp.message_handler(lambda message: message.text == "зупинити")
@@ -150,16 +157,19 @@ async def cancel_game(message: types.Message):
         players: List[Player] = current_game.players
         for player in players:
             answer = current_game.create_list(Player.WAITING, player.id)
-            await bot.edit_message_text(f"список гравців:\n{answer}", chat_id=player.id, message_id=player.list_id)
+            try:
+                await bot.edit_message_text(answer, chat_id=player.id, message_id=player.list_id)
+            except MessageToEditNotFound:
+                pass
             player.status = Player.INACTIVE
             player.secret_name = ""
-            user.cat_id = None
+            user.cat_id = 0
             player.game = None
             await bot.send_message(player.id, "гра зупинена", reply_markup=inactive_keyboard)
         session.delete(current_game)
         session.commit()
     else:
-        await message.answer("немає такого варіянту", reply_markup=message.reply_markup)
+        await message.answer("немає такого варіянту", reply_markup=keyboards[user.status])
 
 
 @dp.message_handler(lambda message: message.text == "почати гру 🚀")
@@ -174,9 +184,11 @@ async def start_game(message: types.Message):
             players: List[Player] = current_game.players
             for j, player in enumerate(players):
                 player.status = Player.GETTINGNAME
-                await bot.delete_message(player.id, player.list_id)
-                player.list_id = 0
-                await bot.send_message(player.id, "запускаємо гру!")
+                answer = current_game.create_list(player.status, player.id)
+                try:
+                    await bot.edit_message_text(answer, chat_id=player.id, message_id=player.list_id)
+                except MessageToEditNotFound:
+                    pass
                 fellow = players[j - 1]
                 player.fellow_id = fellow.id
                 await bot.send_message(player.id, f"📝 загадай персонажа або людину для _{fellow.username[1:]}_ ",
@@ -184,7 +196,7 @@ async def start_game(message: types.Message):
             current_game.is_on = True
             session.commit()
     else:
-        await message.answer("немає такого варіянту", reply_markup=message.reply_markup)
+        await message.answer("немає такого варіянту", reply_markup=keyboards[user.status])
 
 
 @dp.message_handler(lambda message: message.text == "побачити хто я 👀")
@@ -201,7 +213,10 @@ async def get_name(message: types.Message):
         end_of_game = all(player.status == Player.WAITING for player in players)
         for player in players:
             answer = current_game.create_list(player.status, player.id)
-            await bot.edit_message_text(f"список гравців:\n{answer}", chat_id=player.id, message_id=player.list_id)
+            try:
+                await bot.edit_message_text(answer, chat_id=player.id, message_id=player.list_id)
+            except MessageToEditNotFound:
+                pass
         if end_of_game:
             for player in players:
                 await bot.send_message(player.id, "_the end!_", parse_mode='Markdown', reply_markup=inactive_keyboard)
@@ -213,7 +228,7 @@ async def get_name(message: types.Message):
             await message.answer("вітаю! чекаємо інших", reply_markup=waiting_keyboard)
         session.commit()
     else:
-        await message.answer("немає такого варіянту", reply_markup=message.reply_markup)
+        await message.answer("немає такого варіянту", reply_markup=keyboards[user.status])
 
 
 @dp.message_handler()
@@ -236,12 +251,15 @@ async def assign_name(message: types.Message):
                 answer = current_game.create_list(user.status, user_id)
                 for player in current_game.players:
                     if player.id == user_id or not player.list_id:
-                        list_message = await bot.send_message(player.id, f"список гравців:\n{answer}")
+                        list_message = await bot.send_message(player.id, answer)
                         await bot.send_message(player.id, "почніть гру, коли всі приєднаються",
                                                reply_markup=pregame_keyboard)
                         player.list_id = list_message.message_id
                     else:
-                        await bot.edit_message_text(f"список гравців:\n{answer}", player.id, player.list_id)
+                        try:
+                            await bot.edit_message_text(answer, player.id, player.list_id)
+                        except MessageToEditNotFound:
+                            pass
         else:
             await message.answer("немає такої гри 🤷‍♂️", reply_markup=joining_keyboard)
     elif user.status == Player.GETTINGNAME:
@@ -254,15 +272,16 @@ async def assign_name(message: types.Message):
             players: List[Player] = current_game.players
             if all(player.secret_name != "" for player in players):
                 for player in players:
+                    await bot.delete_message(player.id, player.list_id)
                     await bot.send_message(player.id, "починаємо!", reply_markup=ingame_keyboard)
                     answer = current_game.create_list(player.status, player.id)
-                    list_message = await bot.send_message(player.id, f"список гравців:\n{answer}")
+                    list_message = await bot.send_message(player.id, answer)
                     player.list_id = list_message.message_id
                 session.commit()
             else:
                 await message.answer("всьо супер, зачекай інших")
     else:
-        await message.answer("немає такого варіянту", reply_markup=message.reply_markup)
+        await message.answer("немає такого варіянту", reply_markup=keyboards[user.status])
 
 
 if __name__ == "__main__":

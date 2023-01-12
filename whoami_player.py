@@ -21,6 +21,7 @@ class Player(Base):
     username = Column("username", String)
     list_id = Column("list_id", Integer)
     cat_id = Column("cat_id", Integer)
+    delete_msg_id = Column("delete_msg_id", Integer)
     fellow_id = Column("fellow_id", Integer)
     game_id = Column(ForeignKey("games.id"))
     game = relationship("Game", back_populates="players")
@@ -31,6 +32,7 @@ class Player(Base):
         self.username = username
         self.status = Player.INACTIVE
         self.secret_name = ""
+        self.cat_id = 0
 
 
 class Game(Base):
@@ -46,23 +48,22 @@ class Game(Base):
         self.is_on = False
 
     def create_list(self, status, exclude_id):
-        answer = ""
+        answer = "список гравців:\n"
         if status == Player.INGAME or status == Player.GETTINGNAME:
             for player in self.players:
+                answer += f"{player.username} - "
                 if player.id != exclude_id:
-                    answer += f"{player.username} -- {player.secret_name}"
+                    answer += player.secret_name if player.secret_name else "..."
                     answer += " ✅\n" if player.status == Player.WAITING else "\n"
                 else:
-                    answer += f"{player.username} -- ❔\n"
+                    answer += f"❔\n" if player.secret_name else "...\n"
         elif status == Player.PREGAME or status == Player.JOINING:
             for player in self.players:
                 answer += f"{player.username}\n"
         elif status == Player.WAITING:
             for player in self.players:
-                answer += f"{player.username} -- {player.secret_name}"
+                answer += f"{player.username} - {player.secret_name}"
                 answer += " ✅\n" if player.status == Player.WAITING else "\n"
-        if answer == "":
-            answer = "ти тут сам"
         return answer
 
 
